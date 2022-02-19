@@ -315,6 +315,28 @@ def test_ordered_dataframe(
         schema.validate(df, lazy=True)
 
 
+def test_duplicate_columns_dataframe():
+    """Test that duplicate columns are detected."""
+    col_labels = ["a", "a", "b"]
+    frame = pd.DataFrame(data=[[1, 2, 3]], columns=col_labels)
+
+    schema = DataFrameSchema(
+        columns={i: Column(int) for i in col_labels},
+        unique_column_names=True,
+    )
+
+    assert schema.unique_column_names
+
+    with pytest.raises(
+        errors.SchemaError,
+        match="dataframe contains multiple columns with label",
+    ):
+        schema.validate(frame)
+
+    schema.unique_column_names = False
+    assert not schema.unique_column_names
+
+
 def test_series_schema() -> None:
     """Tests that a SeriesSchema Check behaves as expected for integers and
     strings. Tests error cases for types, duplicates, name errors, and issues
@@ -1595,17 +1617,25 @@ def test_set_index_append(
     """
     Test that setting index correctly handles appending to existing index.
     """
-    test_schema = schema_simple.set_index(keys=["col1"], append=append)
-    if append is True:
-        assert isinstance(test_schema.index, MultiIndex)
-        assert list(test_schema.index.columns.keys()) == ["ind0", "col1"]
-        assert (
-            test_schema.index.columns["col1"].dtype
-            == schema_simple.columns["col1"].dtype
-        )
-    else:
-        assert isinstance(test_schema.index, Index)
-        assert test_schema.index.name == "col1"
+
+    expected_index_names = ["ind0"]
+    test_schema = schema_simple
+
+    for key in ["col1", "col2"]:
+        expected_index_names.append(key)
+        test_schema = test_schema.set_index(keys=[key], append=append)
+        if append is True:
+            assert isinstance(test_schema.index, MultiIndex)
+            assert [
+                x.name for x in test_schema.index.indexes
+            ] == expected_index_names
+            assert (
+                test_schema.index.columns[key].dtype
+                == schema_simple.columns[key].dtype
+            )
+        else:
+            assert isinstance(test_schema.index, Index)
+            assert test_schema.index.name == key
 
 
 @pytest.mark.parametrize("drop", [True, False])
